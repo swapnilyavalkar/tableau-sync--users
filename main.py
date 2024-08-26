@@ -5,18 +5,18 @@ from email.message import EmailMessage
 import pytz
 import logging
 
-# Define the server URLs and site IDs for both Prod and QA
-prod_server_url = "https://prd.abc.com/"
-prod_site_id = ""
-qa_server_url = "https://qa.abc.com/"
-qa_site_id = ""
+# Define the server URLs and site IDs for both source and target
+source_server_url = "https://source.abc.com/"
+source_site_id = ""
+target_server_url = "https://target.abc.com/"
+target_site_id = ""
 
 # Define the authentication tokens for both servers
-prod_username = ""
-prod_password = ""
+source_username = ""
+source_password = ""
 
-qa_username = ""
-qa_password = ""
+target_username = ""
+target_password = ""
 
 updated_users_global = []
 updated_users_excel = []
@@ -32,58 +32,58 @@ admin_dl = 'admin@abc.com'
 def main():
     global updated_users_excel
     # Connect to both servers using the Tableau Server Client library
-    prod_auth = TSC.TableauAuth(prod_username, prod_password)
-    prod_server = TSC.Server(prod_server_url)
-    prod_server.add_http_options({'verify': False})
-    prod_server.use_server_version()
+    source_auth = TSC.TableauAuth(source_username, source_password)
+    source_server = TSC.Server(source_server_url)
+    source_server.add_http_options({'verify': False})
+    source_server.use_server_version()
 
-    qa_auth = TSC.TableauAuth(qa_username, qa_password)
-    qa_server = TSC.Server(qa_server_url)
-    qa_server.add_http_options({'verify': False})
-    qa_server.use_server_version()
+    target_auth = TSC.TableauAuth(target_username, target_password)
+    target_server = TSC.Server(target_server_url)
+    target_server.add_http_options({'verify': False})
+    target_server.use_server_version()
 
     updated_users_local = []
 
-    with prod_server.auth.sign_in(prod_auth):
-        with qa_server.auth.sign_in(qa_auth):
+    with source_server.auth.sign_in(source_auth):
+        with target_server.auth.sign_in(target_auth):
 
-            # Retrieve all sites from both Prod and QA
-            prod_sites, prod_pagination = prod_server.sites.get()
-            print("Sites from Prod:", prod_sites)
-            qa_sites, qa_pagination = qa_server.sites.get()
-            print("Sites from QA:", qa_sites)
+            # Retrieve all sites from both source and target
+            source_sites, source_pagination = source_server.sites.get()
+            print("Sites from source:", source_sites)
+            target_sites, target_pagination = target_server.sites.get()
+            print("Sites from target:", target_sites)
 
-            # Loop through each site on the Prod server
-            for prod_site in prod_sites:
-                logging.info(f"Checking for Prod Site: {prod_site.name}")
-                prod_server.auth.switch_site(prod_site)
-                prod_all_users = [users for users in TSC.Pager(prod_server.users)]
+            # Loop through each site on the source server
+            for source_site in source_sites:
+                logging.info(f"Checking for source Site: {source_site.name}")
+                source_server.auth.switch_site(source_site)
+                source_all_users = [users for users in TSC.Pager(source_server.users)]
 
-                # Create a dictionary of the Prod users with their site roles
-                prod_user_roles = {user.name: user.site_role for user in prod_all_users if user.site_role
+                # Create a dictionary of the source users with their site roles
+                source_user_roles = {user.name: user.site_role for user in source_all_users if user.site_role
                                    not in ['ServerAdministrator', 'SiteAdministratorCreator',
                                            'SiteAdministratorExplorer']}
 
-                # Retrieve the corresponding site on the QA server
-                qa_site = next((site for site in qa_sites if site.name == prod_site.name), None)
-                if not qa_site:
+                # Retrieve the corresponding site on the target server
+                target_site = next((site for site in target_sites if site.name == source_site.name), None)
+                if not target_site:
                     continue
-                qa_server.auth.switch_site(qa_site)
-                logging.info(f"Checking for QA Site: {qa_site.name}")
-                qa_all_users = [users for users in TSC.Pager(qa_server.users)]
+                target_server.auth.switch_site(target_site)
+                logging.info(f"Checking for target Site: {target_site.name}")
+                target_all_users = [users for users in TSC.Pager(target_server.users)]
 
-                # Loop through the QA users and update their site roles if necessary
-                for user in qa_all_users:
-                    print("User from QA:", user.name)
+                # Loop through the target users and update their site roles if necessary
+                for user in target_all_users:
+                    print("User from target:", user.name)
                     user_name = user.name
                     user_role = user.site_role
 
-                    # Check if the user has a different role in Prod
-                    if user_name in prod_user_roles and prod_user_roles[user_name] != user_role:
-                        # Update the user's role in QA to match their role in Prod
+                    # Check if the user has a different role in source
+                    if user_name in source_user_roles and source_user_roles[user_name] != user_role:
+                        # Update the user's role in target to match their role in source
                         prev_role = user_role
-                        user.site_role = prod_user_roles[user_name]
-                        qa_server.users.update(user)
+                        user.site_role = source_user_roles[user_name]
+                        target_server.users.update(user)
                         if user.last_login is not None and user.last_login.tzinfo is not None:
                             # Convert to CST timezone
                             cst_tz = pytz.timezone('US/Central')
@@ -91,16 +91,16 @@ def main():
                         else:
                             dt_cst = "Never Logged In"
                         updated_users_local.append(
-                            {'USER_NAME': user_name, 'SITE_NAME': qa_site.name, 'PREV_ROLE': prev_role,
+                            {'USER_NAME': user_name, 'SITE_NAME': target_site.name, 'PREV_ROLE': prev_role,
                              'NEW_ROLE': user.site_role, 'LAST_LOGIN': dt_cst, 'EMAIL': user.email})
 
                         updated_users_excel.append(
-                            {'USER_NAME': user_name, 'SITE_NAME': qa_site.name, 'PREV_ROLE': prev_role,
+                            {'USER_NAME': user_name, 'SITE_NAME': target_site.name, 'PREV_ROLE': prev_role,
                              'NEW_ROLE': user.site_role, 'EMAIL': user.email,
                              'FULL NAME': user.fullname,
                              'LAST_LOGIN': dt_cst})
-            qa_server.auth.sign_out()
-        prod_server.auth.sign_out()
+            target_server.auth.sign_out()
+        source_server.auth.sign_out()
     # Write the updated user details to an Excel file using Pandas
     df = pd.DataFrame(updated_users_excel, columns=['USER_NAME', 'SITE_NAME', 'PREV_ROLE', 'NEW_ROLE', 'EMAIL',
                                                     'FULL NAME', 'LAST_LOGIN'])
@@ -120,7 +120,7 @@ def email_users(updated_users_local):
         for email, group in grouped_users:
             # Set up email message
             msg = EmailMessage()
-            msg['Subject'] = 'Notification: QA Tableau Server Access Update'
+            msg['Subject'] = 'Notification: target Tableau Server Access Update'
             msg['From'] = From
             msg['To'] = email  # replace To with email to send emails to users.
             msg['Bcc'] = ''
@@ -135,13 +135,13 @@ def email_users(updated_users_local):
                         <html>
                           <body style='font-family: Merriweather; font-size: 11px;'>
                             <p style='color: #44546A;'>Dear <b>{user_name}</b>, </p>
-                            <p style='color: #44546A;'>This is to inform you that your Tableau Server ({qa_server_url}) 
-                            access has been updated to match with Production Server.</p>
+                            <p style='color: #44546A;'>This is to inform you that your Tableau Server ({target_server_url}) 
+                            access has been updated to match with sourceuction Server.</p>
                             <p style='color: #44546A;'>
                               <b>Details of your updated access are as follows:</b>
                             </p>{email_body} <br>
                             <p style='color: #44546A;'>Thank you for your understanding and cooperation in this matter.</p>
-                            <p style='color: #44546A;'>Regards, <br>QA Access Syncing Automation</p>
+                            <p style='color: #44546A;'>Regards, <br>target Access Syncing Automation</p>
                           </body>
                         </html>""", subtype='html')
             with smtplib.SMTP(smtp_host, smtp_port) as smtp:
@@ -156,7 +156,7 @@ def email_admin(updated_users_excel):
     try:
         # Set up email message
         msg = EmailMessage()
-        msg['Subject'] = 'Notification: QA Tableau Server Access Syncing Update'
+        msg['Subject'] = 'Notification: target Tableau Server Access Syncing Update'
         msg['From'] = From
         msg['To'] = admin_dl  # replace To with email to send emails to users.
         msg['Bcc'] = ''
@@ -167,7 +167,7 @@ def email_admin(updated_users_excel):
         msg.set_content(email_body)
         msg.add_alternative(f""" <!DOCTYPE html> <html> <body style='font-family: Merriweather; font-size: 11px;'> <p 
         style='color: #44546A;'>Hi Admin Team, </p> <p style='color: #44546A;'>This is to inform you that accesses of 
-        below users were synced on QA Tableau Server ({qa_server_url}) with Prod Server.</p> 
+        below users were synced on target Tableau Server ({target_server_url}) with source Server.</p> 
                                 <p style='color: #44546A;'>
                                   <b>Details of updated accesses are as follows:</b>
                                 </p>{email_body} <br>
